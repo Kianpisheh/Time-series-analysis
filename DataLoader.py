@@ -9,7 +9,7 @@ class DataLoader:
         self._path = path
         self._folder_list = folder_list
         self._sensors = ["huawei Gravity Sensor",
-                         "BMI160 3-axis Accelerometer", "Rotation Vector Sensor"]
+                         "LSM6DS3 3-axis Accelerometer", "Rotation Vector Sensor"]
 
     def get_activities(self):
         labels = []
@@ -75,11 +75,17 @@ class DataLoader:
             data_path += "/HUAWEI Watch3"
         data_path += f'/{recordings_folder}'
 
+        activity_data = {}  # a dictionary of dataframes
         for sensor in self._sensors:
             file_dir = f'{data_path}/{sensor}.csv'
             if os.path.isfile(file_dir) and os.stat(file_dir).st_size != 0:
-                sensor_df = pd.read_csv(file_dir)
-        return sensor_df
+                sensor_df = pd.read_csv(file_dir, header=None)
+                # cut out the activity data from the dataframe
+                # FIXME: the assumption is that the second column is timestamp
+                timestamps = sensor_df[1]
+                start_idx, end_idx = timestamps.searchsorted(time_interval)
+                activity_data[sensor] = sensor_df.iloc[start_idx:end_idx, :]
+        return activity_data
 
     def _get_labels(self, _path):
         _file = _path + "/labels.json"
