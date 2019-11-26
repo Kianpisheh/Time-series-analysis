@@ -14,16 +14,16 @@ class FeatureExtractor:
         self._winsize = 0.2
         self._overlap = 0.5
 
-    def set_sampler(self, win_size, overlap, tolerence, fs_dict):
+    def set_sampler(self, win_size, overlap, tolerence, fs_dict=None):
         self._winsize = win_size
         self._overlap = overlap
         self._fs = copy.deepcopy(fs_dict)
         self._tolerence = tolerence
 
-    def extract_features(self, data_dict, fs_dict, n_samples=200):
+    def extract_features(self, data_dict, fs_dict, n_samples):
         """ Exctract features of the given sensor data segment.
 
-            Args: 
+            Args:
                 sample: a dictionary of dataframes
             Returns:
                 features: a dictionary of dataframes
@@ -31,11 +31,18 @@ class FeatureExtractor:
                           the first col is timestamp
         """
         features = {}
-        for i in range(n_samples):
+        i = 0
+        while True:
+            if n_samples is not None:  # user specified number of samples
+                if i > n_samples:
+                    return features
+
             if i % 50 == 0:
                 print(i)
             # sample
             samples, timestamp = self._get_sample(data_dict, fs_dict, i)
+            if (timestamp == -1):
+                return features  # end of data
 
             if i == 0:
                 for key in samples.keys():
@@ -46,6 +53,7 @@ class FeatureExtractor:
                     self._stats_features(df, key, timestamp)
                 )
 
+            i += 1
         return features
 
     def _get_sample(self, data, fs, i):
@@ -57,17 +65,29 @@ class FeatureExtractor:
             i: the sample number
 
         Returns:
-            features: a dictionary of dataframes 
+            features: a dictionary of dataframes
         """
         samples = {}
-        for key, sensor_df in data.items():
+        starting_time = -1
+        for sensor, sensor_df in data.items():
 
-            recording_start_time = sensor_df["timestamp"].iloc[0]
+            #
+            if sensor == "audio" or sensor == "sr" or sensor == "audio_wav":  # audio extraction is done later
+                continue
+            # FIXME: sr is not a sensor
+            try:
+                recording_start_time = sensor_df["timestamp"].iloc[0]
+                recording_end_time = sensor_df["timestamp"].iloc[-1]
+            except:
+                continue
             # sensor_df = sensor_df.set_index("timestamp")
             starting_time = recording_start_time + self._winsize * 1000 * i * (
                 1 - self._overlap
             )
             end_time = starting_time + self._winsize * 1000
+
+            if end_time > recording_end_time:
+                return None, -1  # end of data
 
             start_idx = self._find_nearest_sample(
                 sensor_df["timestamp"].values, starting_time
@@ -81,7 +101,7 @@ class FeatureExtractor:
                 none_dict = dict((el, None)
                                  for el in header if el != "timestamp")
                 none_dict["timestamp"] = starting_time
-                samples[key] = pd.DataFrame(none_dict, index=[0])
+                samples[sensor] = pd.DataFrame(none_dict, index=[0])
                 continue
 
             if end_idx > start_idx:
@@ -92,7 +112,7 @@ class FeatureExtractor:
                     1, -1), columns=sensor_df.columns)
 
             tmp.reset_index(level=0, inplace=True)
-            samples[key] = tmp
+            samples[sensor] = tmp
         return samples, starting_time
 
     def _find_nearest_sample(self, timestamps, time):
@@ -113,7 +133,7 @@ class FeatureExtractor:
         Args:
             sample: a dataframe of size (n x (ch+1))
                 (ch: num of sensors channel, n: num of sample points)
-        Returns: 
+        Returns:
             features: a dataframe of signal features
 
         """
@@ -192,8 +212,8 @@ class FeatureExtractor:
         Return a set of features in freq domain.
 
         Args:
-            x: a numpy array of size m x ch 
-                (ch: num of sensors channel, m: num of sample points) 
+            x: a numpy array of size m x ch
+                (ch: num of sensors channel, m: num of sample points)
         Returns:
             ft: fft of the input signal (numpy array)
         """
@@ -213,7 +233,7 @@ class FeatureExtractor:
     def __calc_fft(self, x, key):
         N = x.shape[0]
         ft = np.absolute(np.fft.fft(x))[: int(N / 2)]
-        freq = np.arange(0, self._fs[key], self._fs[key] / N)[: int(N / 2)]
+        # freq = np.arange(0, self._fs[key], self._fs[key] / N)[: int(N / 2)]
         return ft
 
     def __spectral_energy(self, ft, ax=0):
@@ -226,11 +246,16 @@ class FeatureExtractor:
         return np.sum((np.diff(np.sign(x - x.mean()), axis=ax) != 0), axis=0)
 
     @staticmethod
-    def save(dict_of_df):
-        if not os.path.exists("features"):
-            os.makedirs("features")
+    def save(dict_of_df, folder, file_name):
+        if not os.path.exists(folder):
+            os.makedirs(folder)
         for key, df in dict_of_df.items():
-            df.to_csv(f"./features/{key}.csv", index=False)
+            sensor_name = FeatureExtractor.get_sensor_name(key)
+            if isinstance(df, np.ndarray):
+                df = pd.DataFrame(df)
+            if isinstance(df, pd.DataFrame):
+                df.to_csv(
+                    f"{folder}/{sensor_name}_{file_name}.csv", index=False)
 
     @staticmethod
     def load(file_name):
@@ -238,3 +263,18 @@ class FeatureExtractor:
             data = pickle.load(handle)
             return data
         return None
+
+    @staticmethod
+    def get_sensor_name(complete_name):
+        sensor_name = complete_name
+
+        if "acc" in complete_name.lower():
+            sensor_name = "acc"
+        if "gyro" in complete_name.lower():
+            sensor_name = "gyro"
+        if "gravity" in complete_name.lower():
+            sensor_name = "grav"
+        if "rotation" in complete_name.lower():
+            sensor_name = "rot"
+
+        return sensor_name
