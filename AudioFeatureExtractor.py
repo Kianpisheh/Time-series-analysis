@@ -62,9 +62,10 @@ class AudioFeatureExtractor:
             if (timestamp == -1):
                 fft_columns = []
                 fft_columns.append("timestamp")
-                for i in range(FFT.shape[1] - 1):
-                    fft_columns.append(f"fft_{i}")
-                features_fft = pd.DataFrame(FFT, columns=fft_columns)
+                if len(FFT.shape) == 2:
+                    for i in range(FFT.shape[1] - 1):
+                        fft_columns.append(f"fft_{i}")
+                    features_fft = pd.DataFrame(FFT, columns=fft_columns)
                 return features, features_fft  # end of the data
 
             feature = {}

@@ -233,7 +233,6 @@ class FeatureExtractor:
     def __calc_fft(self, x, key):
         N = x.shape[0]
         ft = np.absolute(np.fft.fft(x))[: int(N / 2)]
-        # freq = np.arange(0, self._fs[key], self._fs[key] / N)[: int(N / 2)]
         return ft
 
     def __spectral_energy(self, ft, ax=0):
@@ -258,6 +257,20 @@ class FeatureExtractor:
                     f"{folder}/{sensor_name}_{file_name}.csv", index=False)
 
     @staticmethod
+    def save_raw(dict_of_df, folder, file_name):
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+        for key, df in dict_of_df.items():
+            if key == "audio" or key == "audio_wave":
+                continue
+            sensor_name = FeatureExtractor.get_sensor_name(key)
+            if isinstance(df, np.ndarray):
+                df = pd.DataFrame(df)
+            if isinstance(df, pd.DataFrame):
+                df.to_csv(
+                    f"{folder}/{sensor_name}_{file_name}.csv", index=False)
+
+    @staticmethod
     def load(file_name):
         with open(file_name, "rb") as handle:
             data = pickle.load(handle)
@@ -274,7 +287,9 @@ class FeatureExtractor:
             sensor_name = "gyro"
         if "gravity" in complete_name.lower():
             sensor_name = "grav"
-        if "rotation" in complete_name.lower():
+        if "rotation" in complete_name.lower() and (not "game rotation" in complete_name.lower()):
             sensor_name = "rot"
+        if "game rotation" in complete_name.lower():
+            sensor_name = "grot"
 
         return sensor_name
