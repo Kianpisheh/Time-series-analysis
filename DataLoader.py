@@ -4,6 +4,9 @@ import pandas as pd
 import numpy as np
 import librosa
 from pydub import AudioSegment
+import matplotlib.pyplot as plt
+
+plt.style.use('ggplot')
 
 
 class DataLoader:
@@ -104,18 +107,24 @@ class DataLoader:
                 activity_data["sr"] = ret[1]
                 activity_data["audio_wav"] = ret[2]
             elif sensor == "wifi":
-                activity_data["wifi"] = self._get_wifi_data(
-                    data_path, time_interval)
+                activity_data["wifi"] = self.get_wifi_data(
+                    data_path+"/wifi.csv", time_interval)
             else:
                 activity_data[sensor] = self._get_sensor_data(
-                    data_path, sensor, time_interval)
+                    data_path+"/wifi.csv", sensor, time_interval)
 
         return activity_data
 
-    def _get_wifi_data(self, data_path, time_interval):
-        path = data_path + "/wifi.csv"
+    @staticmethod
+    def get_wifi_data(data_path, time_interval=None, type=None):
+        if not os.path.exists(data_path):
+            print("No wifi log found: " + data_path)
+            return {}
         raw_data = pd.read_csv(
-            path, names=["timestamp", "ssid", "bssid", "rssi"], delimiter=",")
+            data_path, names=["timestamp", "ssid", "bssid", "rssi"], delimiter=",")
+
+        if type == "raw":
+            return raw_data
 
         # all APs in the wifi log
         bssid_list = np.unique(raw_data.bssid)
@@ -126,14 +135,24 @@ class DataLoader:
             data[bssid_list[i]] = {"ssid": "", "rssi": np.array(
                 []), "timestamp": np.array([])}
 
+        activity_data = {}
         # fill the new form of the data
         for bssid in bssid_list:
-            sample_indeces = np.where(raw_data.bssid.values == bssid)[0]
-            data[bssid]["rssi"] = raw_data.rssi.values[sample_indeces]
-            data[bssid]["timestamp"] = raw_data.timestamp.values[sample_indeces]
-            data[bssid]["ssid"] = raw_data.ssid.values[sample_indeces][0]
+            # get the data portion in the given interval
+            time_filter = True
+            if time_interval:
+                timestamps = raw_data.timestamp.values
+                time_filter = np.logical_and(
+                    timestamps <= time_interval[1], timestamps >= time_interval[0])
 
-        return data
+            activity_samples = np.logical_and(
+                raw_data.bssid.values == bssid, time_filter)
+            sample_indeces = np.where(activity_samples)[0]
+            if sample_indeces.size != 0:
+                activity_data[bssid] = {"rssi": raw_data.rssi.values[sample_indeces],
+                                        "timestamp": raw_data.timestamp.values[sample_indeces],
+                                        "ssid": raw_data.ssid.values[sample_indeces][0]}
+        return activity_data
 
     def _get_sensor_data(self, data_path, sensor, time_interval):
         file_dir = f'{data_path}/{sensor}.csv'
@@ -209,3 +228,79 @@ class DataLoader:
                 column_headers.append(f'raw_{str(i)}')
             sensor_df.columns = column_headers
         return sensor_df
+
+    @staticmethod
+    def rssi_histogram(activity_data, bin_width=2):
+        histograms = {}
+        for bssid, data_dict in activity_data.items():
+            rssi_vals = data_dict["rssi"]
+            hist = np.histogram(rssi_vals, np.arange(-100, 0, bin_width))
+            histograms[bssid] = [hist, data_dict["ssid"]]
+
+        return histograms
+
+    @staticmethod
+    def draw_hist(histograms, n_cols=None, n_rows=None, ssid=None):
+        if n_cols and n_rows:
+            fig, axes = plt.subplots(n_rows, n_cols, sharex=True, sharey=True)
+            for i, (bssid, hist) in enumerate(histograms.items()):
+                if i == n_cols*n_rows:
+                    break
+                values = hist[0]
+                ssid = hist[1]
+                print(i)
+                ax = axes[int(np.floor(i/n_cols)), i % n_cols]
+                x = np.concatenate((values[0], [0]))
+                ax.bar(values[1], x, width=2, edgecolor="black")
+                ax.set_title(ssid, fontsize=9)
+
+        elif ssid:
+            for i, (bssid, hist) in enumerate(histograms.items()):
+                ssid_ = hist[1]
+                values = hist[0]
+                x = np.concatenate((values[0], [0]))
+                if ssid_ == ssid:
+                    plt.bar(values[1], x, width=2, edgecolor="black")
+
+        else:
+            print("No data to draw")
+            return
+
+        plt.subplots_adjust(left=0.125, bottom=0.1, right=0.9,
+                            top=0.9, wspace=0.2, hspace=0.4)
+        plt.show()
+
+    def create_json_file(raw_data, time_window=2, labels=None, file_name=None, save=True):
+        """ creates a list of json objects (dictionaries).
+
+        Arguments:
+            raw_data {pd.DataFrame} -- columns: timestamp, bssid, ssid, rssi
+
+        Keyword Arguments:
+            save {bool} -- it saves the result if true (default: {True})
+
+        Returns:
+            [list] -- a list of json objects: [{timestamp:***, bssid:[bssid:level], ssid:["***"]}]
+        """
+        data_json = []
+
+        sample = {}
+        for index, row in raw_data.iterrows():
+            if len(sample) == 0:
+                sample = {"timestamp": row.timestamp, "rssi": {
+                    row.bssid: row.rssi}, "ssid": [row.ssid]}
+                if labels is not None:
+                    sample["label"] = __get_label(row.timestamp, labels)
+            elif row.timestamp - sample["timestamp"] > (time_window - 0.06)*1000:
+                data_json.append(sample)
+                sample = {}
+            else:
+                sample["rssi"][row.bssid] = row.rssi
+                sample["ssid"].append(row.ssid)
+
+        if save and file_name is not None:
+            if not os.path.exists("./output"):
+                os.mkdir("./output")
+            with open("./output/" + file_name + ".json", 'w') as file:
+                file.write(json.dumps(data_json, indent=4))
+        return data_json
