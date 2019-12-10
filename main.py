@@ -27,4 +27,4 @@ if False:
 
 # find similar locations
 localizer = Localizer(path)
-localizer.similar_locations(activity_sample, participant="Kian")
+localizer.find_similar_locations(activity_sample, participant="Kian")

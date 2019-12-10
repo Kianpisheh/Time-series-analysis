@@ -121,12 +121,17 @@ class DataLoader:
             print("No wifi log found: " + data_path)
             return {}
         raw_data = pd.read_csv(
-            data_path, names=["timestamp", "ssid", "bssid", "rssi"], delimiter=",")
+            data_path, names=["timestamp", "ssid", "bssid", "rssi"], delimiter=",", skipinitialspace=True)
 
         if type == "raw":
             return raw_data
 
         # all APs in the wifi log
+
+        return DataLoader.get_bssid_based(raw_data, time_interval)
+
+    @staticmethod
+    def get_bssid_based(raw_data, time_interval=None, time_filter=True):
         bssid_list = np.unique(raw_data.bssid)
 
         # create a dictionary of dataframes s.t. bssid => Dataframe(timestamp, level, name)
@@ -137,28 +142,30 @@ class DataLoader:
 
         activity_data = {}
         # fill the new form of the data
+        filter = True
         for bssid in bssid_list:
             # get the data portion in the given interval
-            time_filter = True
-            if time_interval:
+            if time_filter and (time_interval != []):
                 timestamps = raw_data.timestamp.values
-                time_filter = np.logical_and(
+                filter = np.logical_and(
                     timestamps <= time_interval[1], timestamps >= time_interval[0])
 
             activity_samples = np.logical_and(
-                raw_data.bssid.values == bssid, time_filter)
+                raw_data.bssid.values == bssid, filter)
             sample_indeces = np.where(activity_samples)[0]
             if sample_indeces.size != 0:
                 activity_data[bssid] = {"rssi": raw_data.rssi.values[sample_indeces],
                                         "timestamp": raw_data.timestamp.values[sample_indeces],
                                         "ssid": raw_data.ssid.values[sample_indeces][0]}
+
         return activity_data
 
     def _get_sensor_data(self, data_path, sensor, time_interval):
         file_dir = f'{data_path}/{sensor}.csv'
         if os.path.isfile(file_dir) and os.stat(file_dir).st_size != 0:
             print(file_dir)
-            sensor_df = pd.read_csv(file_dir, header=None)
+            sensor_df = pd.read_csv(
+                file_dir, header=None, skipinitialspace=True)
             # dropping android event timestamp
             sensor_df = (sensor_df.iloc[:, 1:]).copy()
             sensor_df = self._add_header(sensor_df)
