@@ -7,7 +7,7 @@ from DataLoader import DataLoader
 from utility import get_duration
 
 
-OVERLAP = 0.8
+OVERLAP = 0.2
 SAMPLE_RATE = 2  # seconds
 FEATURE_RATIO = 0.7
 
@@ -27,17 +27,20 @@ class Localizer:
         query_duration = get_duration(query_sample)
 
         dir_list = os.listdir(data_path)
+        similarity = {}
         for folder in dir_list:
-            data_path += f'/{folder}/wifi.csv'
+            wifi_log_path = data_path + f'/{folder}/wifi.csv'
             if os.path.exists(data_path):
                 # load the wifi-log for the day
-                print(data_path)
-                wifi_data = DataLoader.get_wifi_data(data_path, type="raw")
-                similarity, timestamps = self._compute_similarity(
+                wifi_data = DataLoader.get_wifi_data(wifi_log_path, type="raw")
+                if len(wifi_data) == 0:
+                    continue
+                similarity[folder] = self._compute_similarity(
                     query_sample, wifi_data, query_duration)
-
-        plt.plot(list(timestamps), list(similarity))
-        plt.show()
+                plt.plot(similarity[folder][1],
+                         similarity[folder][0])
+                plt.title(folder)
+                plt.show()
 
     def _compute_similarity(self, query_sample, target_data, time_window):
         target_data_duration = get_duration(target_data, data_type="raw")
@@ -47,25 +50,23 @@ class Localizer:
         similarity = np.zeros(num_samples)
         timestamps = np.zeros(num_samples)
         for i in range(num_samples):
-            data_start_time = target_data["timestamp"].iloc[0]
-            sample_start_time = i * time_window * \
-                (1 - OVERLAP)
+            sample_start_time = i * time_window * (1 - OVERLAP)
+            timestamps[i] = sample_start_time
             # sample from the target data
             sample = self._sample(target_data, time_window, i)
-            num_common = self._num_common_APs(sample, query_sample)
+            if len(sample) == 0:
+                continue
+            #num_common = self._num_common_APs(sample, query_sample)
             # remove insignificant APs
-            sample = self._filter_features(sample, type="significant")
-            query_sample = self._filter_features(
-                query_sample, type="significant")
+            # sample = self._filter_features(sample, type="significant")
+            # query_sample = self._filter_features(
+            #     query_sample, type="significant")
             # compute histograms
             sample_hist = DataLoader.rssi_histogram(sample, bin_width=2)
             query_hist = DataLoader.rssi_histogram(query_sample, bin_width=2)
             # calculate similarity between RSSI distributions for diff. BSSIDs
-            timestamps[i] = sample_start_time
-            if num_common == 0:
-                continue
             similarity[i] = self._distribution_similarity(
-                sample_hist, query_hist)
+                sample_hist, query_hist, time_window)
 
         return similarity, timestamps
 
@@ -102,25 +103,35 @@ class Localizer:
         return filtered_sample
 
     @staticmethod
-    def _distribution_similarity(hist_set1, hist_set2, method="bhat"):
+    def _distribution_similarity(hist_set1, hist_set2, time_window, method="bhat", normalization=True):
         """calculates the similarity between two set of histograms
 
         Arguments:
             hist_set1 {dictionary} -- a dictionary of rssi value for each bssid
         """
+        hist_size = (hist_set1.popitem()[1][0][0]).shape[0]
 
-        if method == "bhat":
-            similarity = 0
-            for bssid, data in hist_set1.items():
-                if bssid in hist_set2:
-                    # normalization
-                    rssi_dist1 = data[0][0] / data[0][0].shape[0]
-                    rssi_dist2 = hist_set2[bssid][0][0] / \
-                        hist_set2[bssid][0][0].shape[0]
+        # get the union of BSSIDs
+        bssid_set = hist_set1.keys()
 
-                    similarity += np.sum(np.sqrt(rssi_dist1 * rssi_dist2))
+        similarity = 0
+        max_feature_num = int(np.floor(time_window/(SAMPLE_RATE*1000)))
+        rssi_dist1 = np.zeros(hist_size)
+        rssi_dist2 = np.zeros(hist_size)
+        for bssid in bssid_set:
+            if bssid in hist_set1:
+                rssi_dist1 = hist_set1[bssid][0][0]
+            if bssid in hist_set2:
+                rssi_dist2 = hist_set2[bssid][0][0]
 
-            return similarity
+            if normalization:
+                rssi_dist1 = rssi_dist1 / max_feature_num
+                rssi_dist2 = rssi_dist2 / max_feature_num
+
+            if method == "bhat":
+                similarity += np.sum(np.sqrt(rssi_dist1 * rssi_dist2))
+
+        return similarity
 
 #
 # activity_hist = DataLoader.rssi_histogram(

@@ -1,5 +1,8 @@
 
 def get_interval(activity, data_type=None):
+    if len(activity) == 0:
+        print("Error (get_interval): empty activity")
+        return None
     if data_type == "raw":
         return [int(activity["timestamp"].iloc[0]), int(activity["timestamp"].iloc[-1])]
 
@@ -16,4 +19,5 @@ def get_interval(activity, data_type=None):
 
 def get_duration(activity, data_type=None):
     interval = get_interval(activity, data_type)
-    return interval[1] - interval[0]
+    if interval:
+        return interval[1] - interval[0]

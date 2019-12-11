@@ -85,6 +85,16 @@ class DataLoader:
                     activity_data[participant] = data
         return activity_data
 
+    def cut_data(self, interval, participant, date, sensors="all"):
+        data = {}
+        # set the data path
+        data_path = f'{self._path}/{participant}'
+        if participant == "Eric":
+            data_path += "/HUAWEI Watch3"
+        data_path += f'/{date}'
+
+        
+
     def _get_data(self, participant, recordings_folder, label, time_interval, sensors="all"):
         # set the data path
         data_path = f'{self._path}/{participant}'
@@ -111,7 +121,7 @@ class DataLoader:
                     data_path+"/wifi.csv", time_interval)
             else:
                 activity_data[sensor] = self._get_sensor_data(
-                    data_path+"/wifi.csv", sensor, time_interval)
+                    data_path, sensor, time_interval)
 
         return activity_data
 
@@ -128,6 +138,7 @@ class DataLoader:
 
         # all APs in the wifi log
 
+        print(data_path)
         return DataLoader.get_bssid_based(raw_data, time_interval)
 
     @staticmethod
