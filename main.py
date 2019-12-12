@@ -29,8 +29,8 @@ if False:
 activity_sample = activity_data["Kian"][-1]["wifi"]
 
 # draw the RSSI dist of each AP for the queried action
-if False:
-    histograms = data_loader.rssi_histogram(activity_sample, bin_width=2)
+if True:
+    histograms = data_loader.rssi_histogram(activity_sample, bin_width=1)
     data_loader.draw_hist(histograms, n_cols=6, n_rows=6, ssid=None)
 
 # find similar locations

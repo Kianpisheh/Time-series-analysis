@@ -7,7 +7,7 @@ from DataLoader import DataLoader
 from utility import get_duration
 
 
-OVERLAP = 0.2
+OVERLAP = 0.0
 SAMPLE_RATE = 2  # seconds
 FEATURE_RATIO = 0.7
 
@@ -43,6 +43,7 @@ class Localizer:
                 plt.show()
 
     def _compute_similarity(self, query_sample, target_data, time_window):
+        time_window = 10 * 1000
         target_data_duration = get_duration(target_data, data_type="raw")
         step = (1 - OVERLAP) * time_window
         num_samples = int(np.floor(target_data_duration / step))
